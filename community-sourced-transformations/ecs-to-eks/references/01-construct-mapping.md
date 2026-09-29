@@ -108,9 +108,20 @@ spec:
 | `startPeriod` | `startupProbe` with the same check, `failureThreshold * periodSeconds >= startPeriod` |
 
 A `CMD-SHELL` check calling `curl localhost:<port>/<path>` may be rewritten as `httpGet` on
-that port and path; cite the original in the report. The **readiness** probe comes from the
-load balancer target group `health_check` (path, port, matcher) when one exists. Without one,
-reuse the liveness check and mark it low risk.
+that port and path; cite the original in the report.
+
+**Every container with a `healthCheck` gets a `readinessProbe`. This is not optional.** Its
+source, in order:
+
+1. The load balancer target group `health_check` (path, port, matcher), when the service has one.
+2. Otherwise, the same check as the `livenessProbe`, with the same `periodSeconds`,
+   `timeoutSeconds` and `failureThreshold`. Record it in the report as low risk.
+
+Do not emit a `livenessProbe` without a `readinessProbe`. On ECS, a task that fails its health
+check stops receiving traffic; on Kubernetes, only a failing readiness probe removes a pod from
+its `Service` endpoints. With liveness alone, a pod whose dependency is down keeps receiving
+requests until liveness restarts it. Services reached only through Service Connect or Cloud Map
+have no target group, so they always take the second source.
 
 ### Service Connect and Cloud Map -> `Service`
 

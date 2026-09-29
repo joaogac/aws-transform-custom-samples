@@ -9,7 +9,7 @@ description: >-
   migration report covering everything that cannot be automated safely.
   Trigger: ECS migration, ECS to EKS, task definition, Service Connect, Fargate to EKS.
 type: custom
-version: 0.2.0
+version: 0.2.1
 ---
 
 # Amazon ECS to Amazon EKS
@@ -139,7 +139,8 @@ Phase 2: Transform the MECHANICAL set (one directory per service under eks/<serv
 ├── environment -> env (one container) or ConfigMap (shared values)
 ├── secrets -> SecretProviderClass + CSI volume (+ secretObjects sync when consumed as env)
 ├── ECS healthCheck -> livenessProbe (+ startupProbe from startPeriod)
-├── Load balancer target group health check -> readinessProbe
+├── ECS healthCheck -> readinessProbe, ALWAYS: the load balancer target group health check when
+│   one exists, otherwise the liveness check (never liveness without readiness)
 ├── Service Connect client alias / Cloud Map registry -> Service (ClusterIP)
 ├── Load balancer target group + listener rule -> Ingress (ALB) or HTTPRoute
 ├── Task role -> ServiceAccount + Pod Identity association (IRSA only on eks-fargate-profile)
@@ -195,3 +196,4 @@ Phase 5: Finalize MIGRATION_REPORT.md
 9. Every `awsvpc` security group is carried by the target's mechanism or reported.
 10. Every `TODO(migration)` has an entry in `## Manual Action Items`, and vice versa.
 11. Every unresolved IaC expression is quoted verbatim in a `TODO(migration)`, never evaluated.
+12. Every container with a health check has a `readinessProbe`.
