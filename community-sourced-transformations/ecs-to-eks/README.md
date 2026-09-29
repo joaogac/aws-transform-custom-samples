@@ -165,8 +165,10 @@ MIGRATION_REPORT.md       inventory, IAM redistribution, scaffolds, manual actio
 
 ## Benchmarks
 
-A benchmark round for v0.2.0 is in progress against two real, commit-pinned public ECS
-repositories (one Terraform, one CloudFormation). Results will be published in `BENCHMARKS.md`.
+See [`BENCHMARKS.md`](BENCHMARKS.md). Summary: two runs of v0.2.0 against pinned public ECS
+repositories (Terraform on `eks-auto-mode`, CloudFormation on `eks-standard`). Source integrity
+perfect in both, zero ECS fields or IRSA annotations in the output, and zero `--dry-run=client`
+failures on core kinds.
 
 ## Known Limitations
 
@@ -201,7 +203,7 @@ repositories (one Terraform, one CloudFormation). Results will be published in `
 ecs-to-eks/
 ├── README.md                          this file
 ├── SKILL.md                           the transformation definition
-├── BENCHMARKS.md                      measured results (pending the v0.2.0 round)
+├── BENCHMARKS.md                      measured results
 └── references/
     ├── 01-construct-mapping.md        classification and mapping for every construct
     └── 02-report-template.md          migration report structure
