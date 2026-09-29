@@ -37,7 +37,7 @@ original expression. The one exception is a literal default in the same module
 | `containerDefinitions[]` | `spec.template.spec.containers[]` | `name`, `image`, `command` -> `args`, `entryPoint` -> `command` |
 | `essential: false` container | additional container in the same pod | Log routers (`firelens`) and OpenTelemetry collectors are reported, not copied (see REPORT-ONLY) |
 | `dependsOn` (`START`, `HEALTHY`) | init container or native sidecar ordering | `COMPLETE`/`SUCCESS` on a short-lived container -> init container. Anything else -> `TODO(migration)` |
-| `portMappings[].containerPort` | `ports[].containerPort` | Keep `name` so Services can target it |
+| `portMappings[].containerPort` | `ports[].containerPort` | Keep `name` so Services can target it. A Kubernetes port name is at most **15 characters** (IANA_SVC_NAME: lowercase alphanumerics and `-`). ECS allows longer names (`checkout-service` is 16), so shorten any longer name (`http` for the only port, otherwise a truncated name) and use the same name in the `Service` `targetPort`; record the rename in the report |
 | `readonlyRootFilesystem`, `user`, `privileged` | `securityContext` | `privileged: true` -> report as a Pod Security Admission blocker |
 | `ulimits`, `linuxParameters` | none | Report |
 | `stopTimeout` | `terminationGracePeriodSeconds` | |
@@ -154,9 +154,14 @@ Driven by `ingress_strategy` (default `alb-ingress`).
 
 `ingressClassName`: `alb` for the AWS Load Balancer Controller on `eks-standard`; on
 `eks-auto-mode` the class must use controller `eks.amazonaws.com/alb`: emit that
-`IngressClass` (+ `IngressClassParams`) once. Certificates, WAF and listener TLS policy are
-placeholders plus report entries; the ALB, its listeners and security groups stay in the
-source IaC and are not recreated.
+`IngressClass` plus an `IngressClassParams` in API group **`eks.amazonaws.com/v1`**, referenced
+by `spec.parameters` (`apiGroup: eks.amazonaws.com`, `kind: IngressClassParams`). The
+`elbv2.k8s.aws/v1beta1` group belongs to the self-managed Load Balancer Controller and does
+not exist on an Auto Mode cluster. Set the scheme on the `IngressClassParams`
+(`scheme: internet-facing` or `internal`, from the source load balancer); a params object the
+`IngressClass` does not reference is ignored. Certificates, WAF and
+listener TLS policy are placeholders plus report entries; the ALB, its listeners and security
+groups stay in the source IaC and are not recreated.
 
 ### Task role -> `ServiceAccount` + identity
 
@@ -193,7 +198,7 @@ mount error.
 |---|---|---|
 | `eks-standard` | `SecurityGroupPolicy` (`vpcresources.k8s.aws/v1beta1`) per service, `podSelector` on the service label; report `ENABLE_POD_ENI=true` on the VPC CNI and supported instance types | Per-service, same as ECS |
 | `eks-fargate-profile` | `SecurityGroupPolicy` per service; the list must include the cluster security group | Per-service |
-| `eks-auto-mode` | `NodeClass` with `podSecurityGroupSelectorTerms` + `podSubnetSelectorTerms` and a `NodePool` per distinct security-group set | **Class-level**: all pods on the NodeClass share the groups. Security Groups for Pods is not supported on Auto Mode. Report the granularity loss and suggest NetworkPolicies for pod-to-pod rules |
+| `eks-auto-mode` | `NodeClass` (`eks.amazonaws.com/v1`) with `podSecurityGroupSelectorTerms` + `podSubnetSelectorTerms` and a `NodePool` (`karpenter.sh/v1`, `spec.template.spec.nodeClassRef` group `eks.amazonaws.com`, kind `NodeClass`) per distinct security-group set. The `NodeClass` MUST also set `role`, `subnetSelectorTerms` and `securityGroupSelectorTerms` (placeholders when unknown): the API server rejects it without them. Workloads MUST select the pool (`nodeSelector: karpenter.sh/nodepool: <name>`), or they land on the built-in `general-purpose` pool and never get the pod security groups | **Class-level**: all pods on the NodeClass share the groups. Security Groups for Pods is not supported on Auto Mode. Report the granularity loss and suggest NetworkPolicies for pod-to-pod rules |
 
 Security group ids are placeholders quoting the source expression. Rules that only allow
 traffic from other ECS tasks' groups must be re-expressed; report each one.
