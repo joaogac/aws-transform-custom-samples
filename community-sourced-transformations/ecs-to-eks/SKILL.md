@@ -9,7 +9,7 @@ description: >-
   migration report covering everything that cannot be automated safely.
   Trigger: ECS migration, ECS to EKS, task definition, Service Connect, Fargate to EKS.
 type: custom
-version: 0.2.2
+version: 0.2.3
 ---
 
 # Amazon ECS to Amazon EKS
@@ -199,4 +199,5 @@ Phase 5: Finalize MIGRATION_REPORT.md
 12. Every container with a health check has a `readinessProbe`.
 13. Every emitted object uses an API group that exists on the target (`eks.amazonaws.com/v1`
     for `NodeClass` and `IngressClassParams` on `eks-auto-mode`), every required field is
-    present (placeholders allowed), and every port name is at most 15 characters.
+    present (placeholders allowed; includes `NodeClass` selectors and `role`, and `NodePool`
+    `requirements`), and every port name is at most 15 characters.

@@ -154,3 +154,60 @@ Both runs used their full 70 agent-minute budget, about the same as the `openshi
 round (~71 per repository). Because the report skeleton is written first and updated as each
 phase completes, the report was already complete when the cap was reached. For larger estates,
 raise `--limit`, or resume with `atx --conversation-id <id> -t --limit <higher>`.
+
+---
+
+## Live Deployment on EKS Auto Mode
+
+The offline invariants above say the output is well formed. They do not say it runs. So the
+`retail-store-sample-app` output was deployed to a throwaway cluster and used.
+
+### Setup
+
+| Item | Value |
+|---|---|
+| Cluster | EKS 1.34, Auto Mode, created with `eksctl --enable-auto-mode`, us-east-1 |
+| Backing services | The repository's own `terraform/lib/dependencies` module: Aurora MySQL, Aurora PostgreSQL, DynamoDB, ElastiCache Redis, Amazon MQ (RabbitMQ), OpenSearch |
+| Operator-supplied, per the report | Values for every `REPLACE_ME_*` placeholder; the four Secrets Manager secrets in the same JSON shape the ECS module used; one IAM role per service trusting `pods.eks.amazonaws.com`, with the DynamoDB policy on `carts` and `checkout` and secret read on `catalog` and `orders`; the `aws-secrets-store-csi-driver-provider` add-on |
+| Pod Identity associations | The generated `eks/iam/pod-identity.tf`, with only its `role_arn` placeholders set |
+
+### Round 1: v0.2.0 output found five defects
+
+A server-side dry run on the live cluster rejected, or silently mis-applied, objects that pass
+every offline check:
+
+| Defect | Live result |
+|---|---|
+| `IngressClassParams` in `elbv2.k8s.aws/v1beta1` | Rejected: that group only exists with the self-managed Load Balancer Controller |
+| `IngressClass` did not reference its `IngressClassParams` | Accepted, params ignored |
+| Port name `checkout-service` (16 characters) | Rejected: the limit is 15 |
+| `NodeClass` without `role`, `subnetSelectorTerms`, `securityGroupSelectorTerms` | Rejected |
+| `NodePool` scaffold not selected by any workload | Pods ran on `general-purpose`; pod security groups never applied |
+
+With those worked around by hand, all five services ran and the storefront answered through
+the ALB. Each defect was then fixed in the definition (v0.2.2).
+
+### Round 2: v0.2.2 output, deployed as generated
+
+v0.2.2 was run on a fresh clone at the same commit (92.31 agent minutes against a 90-minute
+cap, report `complete`, 0 source files changed, 0 ECS fields, 0 IRSA annotations). A
+server-side dry run on the live cluster rejected **1 of 23** objects: the `NodePool` had no
+`spec.template.spec.requirements`, a required field. That was the only change made by hand,
+and it is fixed in the definition as v0.2.3. Everything else was applied exactly as generated.
+
+| Check | Result |
+|---|---|
+| Pods | **5/5 Running and ready, 0 restarts**, all on the generated `retail-store-sg` NodePool |
+| Pod security groups | Applied through the generated `NodeClass` `podSecurityGroupSelectorTerms` |
+| ALB | Provisioned by Auto Mode from the generated `IngressClass` + `IngressClassParams` (`internet-facing`) |
+| `GET /`, `/catalog`, `/cart`, `/checkout`, `/topology` | **HTTP 200** through the ALB |
+| Secrets | Synced by the CSI driver with Pod Identity: 5 keys for `catalog`, 6 for `orders` |
+| `catalog` | Migrated MySQL, connected to OpenSearch, indexed 12 products |
+| `orders` | Ran its PostgreSQL migration, connected to RabbitMQ |
+| **Purchase flow** | Browse, add to cart, address, delivery, payment: **"Order placed"** with an order ID. `GET /orders` on the `orders` service returns the order; the round 1 order is also still there after round 2 replaced every pod, so it is persisted in Aurora PostgreSQL |
+
+The Service Connect names (`http://catalog`, `http://carts`, ...) resolved as Kubernetes
+`Service` names with no application change, which is the MECHANICAL half of the Service
+Connect mapping. The proxy features (retries, outlier detection) were not exercised.
+
+The cluster and backing services were test-only and are torn down after the run.

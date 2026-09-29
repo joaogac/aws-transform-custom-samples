@@ -112,6 +112,9 @@ every construct and its classification, and the REPORT-ONLY entries are the bloc
 
 - AWS Transform Custom access and the `atx` CLI
 - `kubectl` and `yq` for local validation (optional; the transformation degrades gracefully)
+- To apply the output: an EKS cluster for the chosen target, the
+  `aws-secrets-store-csi-driver-provider` add-on when services use secrets, and on
+  `eks-standard` the `eks-pod-identity-agent` add-on (built into Auto Mode)
 
 ### Getting Started with AWS Transform Custom
 
@@ -144,7 +147,7 @@ cat > config.json <<'JSON'
 JSON
 
 atx custom def exec -n ecs-to-eks -p . -x -t \
-  --configuration file://config.json --limit 70
+  --configuration file://config.json --limit 120
 ```
 
 | Key | Values | Effect |
@@ -168,7 +171,9 @@ MIGRATION_REPORT.md       inventory, IAM redistribution, scaffolds, manual actio
 See [`BENCHMARKS.md`](BENCHMARKS.md). Summary: two runs of v0.2.0 against pinned public ECS
 repositories (Terraform on `eks-auto-mode`, CloudFormation on `eks-standard`). Source integrity
 perfect in both, zero ECS fields or IRSA annotations in the output, and zero `--dry-run=client`
-failures on core kinds.
+failures on core kinds. The `retail-store-sample-app` output was then deployed on a live EKS
+Auto Mode cluster: the defects that only a live API server catches were fixed through v0.2.3,
+and with the v0.2.2 output all five services ran and a full purchase completed through the ALB.
 
 ## Known Limitations
 
@@ -196,6 +201,8 @@ failures on core kinds.
 | `kubectl apply --dry-run=client` fails on `SecretProviderClass`, `SecurityGroupPolicy` or `NodeClass` | Expected on a machine with no cluster: those kinds need their CRDs. The report lists each CRD and add-on required |
 | Pods start without AWS credentials on `eks-standard` | The `eks-pod-identity-agent` add-on is not installed. It is built into Auto Mode, not into standard clusters |
 | A secret mount fails with an access denied error | The workload role lacks the secret grants the execution role used to hold. Check the report's IAM Redistribution table |
+| `FailedMount ... driver name secrets-store.csi.k8s.io not found` | The Secrets Store CSI driver is not installed; Auto Mode does not include it. Install the `aws-secrets-store-csi-driver-provider` EKS add-on. On a node that just joined, the same event appears briefly while the driver registers and then clears |
+| Pods run, but not with the per-service security groups | Check that each `Deployment` selects the generated `NodePool` (`karpenter.sh/nodepool`) and that the `NodeClass` selectors match real security groups and subnets |
 
 ## Repository Structure
 
